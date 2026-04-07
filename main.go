@@ -165,8 +165,12 @@ type frameMsg struct {
 func (m model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 	switch msg := msg.(type) {
 	case bubbletea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			stopPlayback()
+			return m, bubbletea.Quit
+		}
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "q":
 			if m.currentView == "playing" {
 				stopPlayback()
 				m.currentView = "menu"
