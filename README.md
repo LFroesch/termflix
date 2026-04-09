@@ -27,24 +27,29 @@ Command:
 ```bash
 tf
 ```
+
 ## Features
 
 ✨ **Bubble Tea TUI:**
+
 - Interactive list navigation
 - Real-time status updates
 - Beautiful styled UI
 
 🎨 **Dual Rendering:**
+
 - **ASCII Mode** - Works on any terminal
 - **Kitty Mode** - Native image quality in Kitty terminal
 
 📚 **Library Management:**
+
 - Scan directories recursively
 - Track watched/unwatched status
 - Persistent storage in `~/.config/termflix/`
 - Video duration detection
 
 🎮 **Keyboard Controls:**
+
 - Navigate with arrow keys
 - Play with [enter]
 - Delete with [d]
@@ -54,6 +59,7 @@ tf
 ## Installation
 
 ### Prerequisites
+
 - Go 1.21+
 - `ffprobe` for video duration detection (usually comes with ffmpeg)
 
@@ -97,16 +103,19 @@ go run main.go [options]
 ### Basic Commands
 
 **Start the app:**
+
 ```bash
 ./termflix
 ```
 
 **Scan a directory on startup:**
+
 ```bash
 ./termflix --scan ~/Movies
 ```
 
 **Show help:**
+
 ```bash
 ./termflix --help
 ```
@@ -218,6 +227,7 @@ github.com/charmbracelet/lipgloss      # Terminal styling
 ## Troubleshooting
 
 **No videos found after scanning:**
+
 ```bash
 # Make sure videos are in the directory
 ls ~/Videos/*.mp4
@@ -227,6 +237,7 @@ ls ~/Videos/*.mp4
 ```
 
 **ffprobe not found:**
+
 ```bash
 # Install ffmpeg
 brew install ffmpeg     # macOS
@@ -234,16 +245,11 @@ sudo apt install ffmpeg # Linux
 ```
 
 **Kitty mode looks wrong:**
+
 - Your terminal doesn't support Kitty graphics protocol
 - Fall back to ASCII with `[m]`
 - Use native ffplay for real playback
 
 ## License
 
-Free to use and modify!
-
----
-
-**Enjoy! 🍿**
-
-Built with ❤️ using Bubble Tea, Go, and lots of terminal magic.
+[AGPL-3.0](LICENSE)
