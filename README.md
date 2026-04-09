@@ -6,6 +6,8 @@ Features dual rendering modes: **ASCII** (works everywhere) and **Kitty graphics
 
 ## Quick Install
 
+Supported platforms: Linux and macOS. On Windows, use WSL.
+
 Recommended (installs to `~/.local/bin`):
 
 ```bash
