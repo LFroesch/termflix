@@ -3,3 +3,8 @@ WORK.md
 tf
 demo-short.mp4
 test.mp4
+
+# Allow release workflow even when .github is globally ignored
+!.github/
+!.github/workflows/
+!.github/workflows/release.yml
