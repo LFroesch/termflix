@@ -84,8 +84,17 @@ func stopPlayback() {
 	}
 }
 
+type renderMode int
+
+const (
+	RenderHalfBlock renderMode = iota
+	RenderASCII
+	RenderKitty
+)
+
 // Main model
 type model struct {
+	renderMode   renderMode
 	list         list.Model
 	library      Library
 	currentView  string // "menu", "playing", "scanning", "help"
@@ -507,32 +516,42 @@ func (m model) playVideo(idx int) bubbletea.Cmd {
 		}
 	}
 
-	// Content area dimensions — alt screen reserves one extra row for cursor
-	pixW := m.width
+	// Content area in terminal cells
 	contentH := m.height - 5 // header+sep+sep+footer+cursor = 5 reserved
 	if contentH < 2 {
 		contentH = 2
 	}
-	pixH := contentH * 2 // half-block: 2 pixel rows per terminal row
-	// ensure even dimensions
-	pixW = (pixW / 2) * 2
-	pixH = (pixH / 2) * 2
-	if pixW <= 0 || pixH <= 0 {
-		pixW, pixH = 80, 48
+	// Canvas in pixels: each terminal cell = 1×2 pixels (half-block)
+	canvasW := (m.width / 2) * 2   // keep even
+	canvasH := (contentH * 2 / 2) * 2 // keep even
+
+	if canvasW <= 0 || canvasH <= 0 {
+		canvasW, canvasH = 80, 48
 	}
+
+	// Compute letterboxed scale that fits within canvas, preserving AR.
+	// We do this ourselves so the frame size is exact — ffmpeg's
+	// force_original_aspect_ratio can round differently and misalign reads.
+	scaleW, scaleH := letterboxDims(video.Path, canvasW, canvasH)
+	padX := (canvasW - scaleW) / 2
+	padY := (canvasH - scaleH) / 2
 
 	// Log ffmpeg stderr so we can debug issues
 	logFile, _ := os.OpenFile("/tmp/termflix-ffmpeg.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 
-	// ffmpeg: decode video to raw RGB frames, scaled to content area
+	// ffmpeg: decode video to raw RGB frames, scaled + padded to canvas
 	ffmpegArgs := []string{
 		"-i", video.Path,
-		"-vf", fmt.Sprintf("fps=15,scale=%d:%d", pixW, pixH),
+		"-vf", fmt.Sprintf(
+  			"fps=%d,scale=%d:%d:flags=neighbor,format=rgb24,geq=r='r(X,Y/2*2)':g='g(X,Y/2*2)':b='b(X,Y/2*2)',pad=%d:%d:%d:%d:black",
+			targetFPS, scaleW, scaleH, canvasW, canvasH, padX, padY,
+		),
 		"-f", "rawvideo",
 		"-pix_fmt", "rgb24",
 		"-an",
 		"pipe:1",
 	}
+	pixW, pixH := canvasW, canvasH
 	ffCmd := exec.Command("ffmpeg", ffmpegArgs...)
 	pipe, err := ffCmd.StdoutPipe()
 	if err != nil {
@@ -566,7 +585,7 @@ func (m model) playVideo(idx int) bubbletea.Cmd {
 	return readFrameCmd(ffCmd, pipe, frameSize, pixW, pixH, video)
 }
 
-const targetFPS = 15
+const targetFPS = 10
 const frameDuration = time.Second / targetFPS
 
 // readFrameCmd reads one raw RGB frame from the pipe, renders it, and returns
@@ -601,7 +620,9 @@ func readFrameCmd(cmd *exec.Cmd, pipe io.ReadCloser, frameSize, pixW, pixH int, 
 // characters (▀) with ANSI true-color. Upper pixel = fg, lower pixel = bg.
 // Each terminal row displays two rows of pixels, doubling effective resolution.
 func renderHalfBlock(data []byte, width, height int) string {
-	var sb strings.Builder
+	// Pre-allocate: each cell is ~25 bytes (combined fg+bg escape + ▀) plus reset+newline per row
+	sb := strings.Builder{}
+	sb.Grow(height/2*(width*25+8))
 
 	for y := 0; y+1 < height; y += 2 {
 		for x := 0; x < width; x++ {
@@ -615,8 +636,8 @@ func renderHalfBlock(data []byte, width, height int) string {
 			tr, tg, tb := data[topIdx], data[topIdx+1], data[topIdx+2]
 			br, bg, bb := data[botIdx], data[botIdx+1], data[botIdx+2]
 
-			// Set fg (upper pixel) and bg (lower pixel), then draw ▀
-			fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm▀", tr, tg, tb, br, bg, bb)
+			// Combined fg+bg in one escape sequence, then draw ▀
+			fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm▀", tr, tg, tb, br, bg, bb)
 		}
 		sb.WriteString("\x1b[0m\n")
 	}
@@ -638,6 +659,49 @@ func formatDuration(seconds float64) string {
 		return fmt.Sprintf("%02d:%02d:%02d", hrs, mins, secs)
 	}
 	return fmt.Sprintf("%02d:%02d", mins, secs)
+}
+
+// letterboxDims returns the largest even (w, h) that fits within (canvasW, canvasH)
+// while preserving the video's aspect ratio. Falls back to canvas size on error.
+func letterboxDims(videoPath string, canvasW, canvasH int) (int, int) {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=width,height",
+		"-of", "csv=p=0",
+		videoPath,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return canvasW, canvasH
+	}
+	parts := strings.Split(strings.TrimSpace(string(out)), ",")
+	if len(parts) != 2 {
+		return canvasW, canvasH
+	}
+	srcW, errW := strconv.Atoi(parts[0])
+	srcH, errH := strconv.Atoi(parts[1])
+	if errW != nil || errH != nil || srcW <= 0 || srcH <= 0 {
+		return canvasW, canvasH
+	}
+
+	// Scale to fit canvas, keeping AR
+	w := canvasW
+	h := (w * srcH) / srcW
+	if h > canvasH {
+		h = canvasH
+		w = (h * srcW) / srcH
+	}
+	// Ensure even dimensions
+	w = (w / 2) * 2
+	h = (h / 2) * 2
+	if w <= 0 {
+		w = 2
+	}
+	if h <= 0 {
+		h = 2
+	}
+	return w, h
 }
 
 func getVideoDuration(videoPath string) (float64, error) {

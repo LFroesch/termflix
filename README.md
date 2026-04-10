@@ -1,5 +1,7 @@
 # 🎬 TermFlix - Go Bubble Tea Edition
 
+Still very much a work in progress. Just for fun on the side :)
+
 A sleek terminal UI video player for your personal collection, built with **Bubble Tea** and **Go**.
 
 Features dual rendering modes: **ASCII** (works everywhere) and **Kitty graphics** (high quality).
